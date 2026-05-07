@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>İzmir Kentsel Dönüşüm Asistanı</title>
+<style>
+  :root { --primary:#1a5f9e; --bg:#f8fafc; --user:#e3f2fd; --bot:#ffffff; --border:#e2e8f0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); margin:0; padding:20px; }
+  
+  #kd-widget {
+    position: fixed; bottom: 24px; right: 24px; width: 380px; max-height: 80vh;
+    background: #fff; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+    display: flex; flex-direction: column; overflow: hidden; font-size: 14px;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
+  #kd-widget.hidden { transform: translateY(20px); opacity: 0; pointer-events: none; }
+  
+  .kd-header {
+    background: var(--primary); color: #fff; padding: 14px 16px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .kd-header h3 { margin:0; font-size:16px; font-weight:600; }
+  .kd-close { cursor:pointer; font-size:18px; opacity:0.8; }
+  .kd-close:hover { opacity:1; }
+
+  #kd-messages { flex:1; padding: 12px; overflow-y: auto; display:flex; flex-direction:column; gap:10px; }
+  .kd-msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.45; }
+  .kd-msg.user { background: var(--user); align-self: flex-end; border-bottom-right-radius: 4px; }
+  .kd-msg.bot { background: var(--bot); border: 1px solid var(--border); align-self: flex-start; border-bottom-left-radius: 4px; }
+  .kd-msg.bot .source { display:block; margin-top:8px; font-size:12px; color:#64748b; border-top:1px solid #eee; padding-top:6px; }
+  .kd-msg.bot .disclaimer { display:block; margin-top:6px; font-size:11px; color:#ef4444; font-style:italic; }
+
+  #kd-input-area { padding: 10px; border-top: 1px solid var(--border); display:flex; gap:8px; background:#fafafa; }
+  #kd-input { flex:1; border:1px solid var(--border); border-radius: 20px; padding: 10px 14px; outline:none; }
+  #kd-send { background: var(--primary); color:#fff; border:none; border-radius:50%; width:40px; height:40px; cursor:pointer; font-size:18px; }
+  #kd-send:hover { background:#154a7a; }
+
+  #kd-quick { padding: 8px 10px; display:flex; gap:6px; flex-wrap:wrap; background:#f1f5f9; border-top:1px solid var(--border); }
+  .kd-qb { background:#fff; border:1px solid var(--border); border-radius:20px; padding:6px 12px; font-size:12px; cursor:pointer; transition:all 0.2s; }
+  .kd-qb:hover { background:#e2e8f0; border-color:#cbd5e1; }
+
+  #kd-open {
+    position: fixed; bottom: 24px; right: 24px; background: var(--primary); color:#fff;
+    border:none; border-radius:50%; width:56px; height:56px; font-size:24px;
+    cursor:pointer; box-shadow:0 6px 16px rgba(26,95,158,0.4); z-index:999;
+  }
+  #kd-open:hover { transform:scale(1.05); }
+
+  @media(max-width:480px) {
+    #kd-widget { width:100%; bottom:0; right:0; border-radius:16px 16px 0 0; max-height:75vh; }
+    #kd-open { bottom:16px; right:16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Chatbot Widget -->
+<button id="kd-open">💬</button>
+<div id="kd-widget" class="hidden">
+  <div class="kd-header">
+    <h3>🏛️ Kentsel Dönüşüm Asistanı</h3>
+    <span class="kd-close" id="kd-close">✕</span>
+  </div>
+  <div id="kd-messages"></div>
+  <div id="kd-quick"></div>
+  <div id="kd-input-area">
+    <input type="text" id="kd-input" placeholder="Sorunuzu yazın (örn: kira yardımı)">
+    <button id="kd-send">➤</button>
+  </div>
+</div>
+
+<script>
+// 🔹 10 SENARYO VERİSİ (Sadece Kamu Kaynaklı)
+const SCENARIOS = [
+  {
+    id: "scn_001", keywords: ["riskli yapı", "binam güvenli", "deprem raporu", "tespit"],
+    response: `Bu konudaki endişenizi anlıyorum. 🤝 Binanızın deprem güvenliği açısından 'riskli yapı' olup olmadığını öğrenmek için resmi başvuru yapmanız gerekir.\n\n📋 Adımlar:\n1. Malik veya yetkili temsilci, Çevre ve Şehircilik İl Müdürlüğü'ne başvurur\n2. Bakanlıkça yetkilendirilmiş kuruluş binayı inceler\n3. Tespit raporu 15 gün içinde tebliğ edilir\n4. İtiraz hakkınız vardır (15 gün)\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır. Resmi işlem için ilgili kuruma başvurunuz.`,
+    source: "Kaynak: Çevre, Şehircilik ve İklim Değişikliği Bakanlığı - csb.gov.tr",
+    buttons: ["📍 İl Müdürlükleri", "📄 Gerekli Belgeler"]
+  },
+  {
+    id: "scn_002", keywords: ["kira yardımı", "ödeme", "ne zaman", "tutar", "yatır"],
+    response: `Kira yardımları, riskli yapı yıkım onayı sonrası başlar ve hak sahibinin banka hesabına aylık olarak yatırılır. 💰\n\n📅 2026 güncel tutar: ~12.000 TL/ay\n🔄 Ödeme akışı: Yıkım ruhsatı → İl Müdürlüğü ödeme emri → Banka EFT'si (genellikle ayın 15-25'i)\n\n⚠️ Gecikme olursa: e-Devlet > 'Kentsel Dönüşüm Kira Yardımı Sorgulama' veya Alo 199\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır.`,
+    source: "Kaynak: Resmi Gazete + Çevre, Şehircilik ve İklim Değişikliği Bakanlığı",
+    buttons: ["🔍 e-Devlet Sorgu", "📞 Alo 199"]
+  },
+  {
+    id: "scn_003", keywords: ["haklarım", "malik", "mülkiyet", "korunur", "hisse"],
+    response: `6306 Sayılı Kanun, mülk sahiplerinin haklarını açıkça güvence altına alır. ✅\n\n📋 Temel haklar:\n• Mülkiyet hakkınız saklıdır, yeni konutta aynı oranda hisse alırsınız\n• Kira yardımı/geçici konut hakkınız vardır\n• Anlaşma sağlanamazsa kamulaştırma devreye girer\n• Tespit raporuna itiraz hakkınız vardır\n\n💡 Güvenli ilerleme: Yazılı belgeleri saklayın, hak sahipleri toplantılarına katılın.\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır.`,
+    source: "Kaynak: 6306 Sayılı Kanun + mevzuat.gov.tr",
+    buttons: ["📄 Hak Rehberi PDF", "⚖️ Kanun Metni"]
+  },
+  {
+    id: "scn_004", keywords: ["anlaşma", "komşu", "imza", "çoğunluk", "red"],
+    response: `Kentsel dönüşümde anlaşma önemlidir. Ancak sağlanamazsa kanun çözüm sunar. 🤝\n\n📊 Çoğunluk kuralı: Arsa payı açısından 3/4 çoğunluk sağlanırsa proje uygulanabilir. Kalan %25 için kamulaştırma devreye girer.\n\n⚖️ Kamulaştırmada mülkiyet hakkınız korunur, bedel bilirkişice belirlenir, itiraz hakkınız vardır.\n\n💡 Öneri: Hak sahipleri toplantılarına katılın, yazılı iletişimi tercih edin.\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır.`,
+    source: "Kaynak: 6306 Sayılı Kanun Madde 6 + csb.gov.tr",
+    buttons: ["📊 Çoğunluk Hesaplama", "⚖️ Kamulaştırma Rehberi"]
+  },
+  {
+    id: "scn_005", keywords: ["güçlendirme", "yıkım", "karar", "kim belirler"],
+    response: `Binanızın güçlendirilip güçlendirilemeyeceği teknik inceleme sonucu belirlenir. 🔍\n\n✅ Güçlendirme: Yapısal uygunluk + maliyet < yeni inşaat + AFAD/Bakanlık standartları\n❌ Yıkım: Deprem güvenliği sağlanamıyorsa veya güçlendirme maliyeti yüksekse\n\n📋 Karar süreci: İnceleme → Rapor → Tebliğ → İtiraz hakkı (15 gün)\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır.`,
+    source: "Kaynak: AFAD Kılavuzu + csb.gov.tr",
+    buttons: ["🔍 Teknik Kriterler", "📄 AFAD Rehberi"]
+  },
+  {
+    id: "scn_006", keywords: ["kat karşılığı", "anlaşma", "firma", "sözleşme", "dikkat"],
+    response: `Kat karşılığı anlaşma, arsa sahibinin arsası, müteahhidin inşaat maliyeti üstlendiği iş birliğidir. 🤝\n\n⚠️ Kritik hususlar:\n• Sözleşme yazılı/noter onaylı olmalı\n• Arsa payı karşılığı net belirtilmeli\n• Teslim tarihi & gecikme tazminatı açık olmalı\n• Müteahhit yetki belgesi sorgulanmalı (e-Devlet)\n\n💡 İmzadan önce: Maddeleri okuyun, baro bilgi hattına danışın, yazılı belge saklayın.\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır.`,
+    source: "Kaynak: csb.gov.tr + tüketici.gov.tr",
+    buttons: ["🔍 Müteahhit Sorgula", "📄 Sözleşme Kontrol"]
+  },
+  {
+    id: "scn_007", keywords: ["ne kadar sürer", "zaman", "takvim", "teslim"],
+    response: `Süreç proje büyüklüğü ve anlaşma hızına göre değişir. 📅\n\n🔄 Ortalama süreler:\n• Riskli yapı tespiti: 15-30 gün\n• Anlaşma: 3-12 ay\n• Ruhsat: 2-6 ay\n• İnşaat: 12-24 ay\n\n🔗 Takip: e-Devlet > 'Kentsel Dönüşüm Proje Takip' veya izmir.bel.tr/kentsel-donusum\n\n💡 Yazılı iletişimi tercih edin, duyuruları takip edin.\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır.`,
+    source: "Kaynak: csb.gov.tr + İzmir Büyükşehir Belediyesi",
+    buttons: ["🔍 e-Devlet Takip", "📍 İzmir Projeleri"]
+  },
+  {
+    id: "scn_008", keywords: ["kiracı", "kirayım", "tahliye", "yardım", "hakkım"],
+    response: `Kiracı haklarınız da kanunla korunmaktadır. 🤝\n\n✅ Haklar:\n• Tahliye için en az 30 gün önce yazılı bildirim\n• Kira yardımı/geçici konut desteği\n• Haksız tahliye durumunda Tüketici Hakem Heyeti\n\n💰 Kira yardımı: ~12.000 TL/ay (2026)\nBaşvuru: Riskli tespit sonrası İl Müdürlüğü\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır.`,
+    source: "Kaynak: 6306 Sayılı Kanun + csb.gov.tr",
+    buttons: ["📄 Kiracı Rehberi", "💰 Başvuru Formu"]
+  },
+  {
+    id: "scn_009", keywords: ["itiraz", "rapor", "yanlış", "tekrar", "başvuru"],
+    response: `Evet, tespit raporuna itiraz hakkınız bulunmaktadır. ⚖️\n\n📋 İtiraz süreci:\n• Süre: Tebliğden itibaren 15 gün\n• Başvuru: İl Müdürlüğü'ne yazılı\n• İnceleme: Farklı yetkili kuruluşça yapılır\n• Sonuç: En geç 30 gün\n\n💡 Dilekçede: İlgili madde, gerekçe, destekleyici belgeler belirtin.\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır.`,
+    source: "Kaynak: 6306 Yönetmeliği Madde 10 + mevzuat.gov.tr",
+    buttons: ["📄 İtiraz Örneği", "📍 İl Müdürlükleri"]
+  },
+  {
+    id: "scn_010", keywords: ["başvuru", "nasıl yapılır", "nereden", "evrak"],
+    response: `Başvuru kanalları: 📋\n\n1️⃣ e-Devlet: turkiye.gov.tr > 'Kentsel Dönüşüm Hizmetleri'\n2️⃣ İl Müdürlüğü: Şahsen/posta (csb.gov.tr/il-mudurlukleri)\n3️⃣ İzmir BB: izmir.bel.tr/kentsel-donusum veya Alo 153\n\n📄 Genellikle gerekli: Kimlik, tapu/kira sözleşmesi, vekalet (varsa), tespit raporu (varsa)\n\n⚠️ Bu bilgi bilgilendirme amaçlıdır.`,
+    source: "Kaynak: e-Devlet + csb.gov.tr + İzmir Büyükşehir",
+    buttons: ["🔗 e-Devlet'e Git", "📞 Alo 153"]
+  }
+];
+
+// 🔹 CHAT MOTORU
+const messages = document.getElementById('kd-messages');
+const input = document.getElementById('kd-input');
+const quickBar = document.getElementById('kd-quick');
+let isOpen = false;
+
+function toggleWidget() {
+  isOpen = !isOpen;
+  document.getElementById('kd-widget').classList.toggle('hidden', !isOpen);
+  document.getElementById('kd-open').style.display = isOpen ? 'none' : 'block';
+  if(isOpen && messages.children.length === 0) showWelcome();
+}
+
+function showWelcome() {
+  addBot("👋 Merhaba! İzmir kentsel dönüşüm süreçleri hakkında **resmi kamu kaynaklarına dayalı** bilgi alabileceğiniz asistanınızım.\n\n🔹 Aşağıdan bir konu seçebilir veya sorunuzu yazabilirsiniz.");
+  renderQuickButtons();
+}
+
+function addBot(text, source="", buttons=[]) {
+  const div = document.createElement('div');
+  div.className = 'kd-msg bot';
+  div.innerHTML = text.replace(/\n/g, '<br>') + 
+    (source ? `<span class="source">${source}</span>` : '') + 
+    `<span class="disclaimer">⚠️ Bu bilgi bilgilendirme amaçlıdır. Resmi işlem için ilgili kuruma başvurunuz.</span>`;
+  messages.appendChild(div);
+  if(buttons.length) {
+    const btnDiv = document.createElement('div');
+    btnDiv.style.cssText = 'margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;';
+    buttons.forEach(b => {
+      const btn = document.createElement('button');
+      btn.textContent = b;
+      btn.className = 'kd-qb';
+      btn.onclick = () => { input.value = b; send(); };
+      btnDiv.appendChild(btn);
+    });
+    div.appendChild(btnDiv);
+  }
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function addUser(text) {
+  const div = document.createElement('div');
+  div.className = 'kd-msg user';
+  div.textContent = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function findBestMatch(query) {
+  const q = query.toLowerCase().trim();
+  let best = null;
+  let score = 0;
+  
+  SCENARIOS.forEach(sc => {
+    let s = 0;
+    sc.keywords.forEach(kw => {
+      if(q.includes(kw)) s += kw.length; // Uzun keyword = yüksek öncelik
+    });
+    if(s > score) { score = s; best = sc; }
+  });
+  return best || null;
+}
+
+function send() {
+  const q = input.value.trim();
+  if(!q) return;
+  addUser(q);
+  input.value = '';
+  
+  setTimeout(() => {
+    const match = findBestMatch(q);
+    if(match) {
+      addBot(match.response, match.source, match.buttons);
+    } else {
+      addBot("Sorunuzu tam anlayamadım. 🤔 Lütfen aşağıdaki konulardan birini seçin veya sorunuzu daha net ifade edin (örn: 'kira yardımı', 'riskli yapı tespiti').", "", ["💰 Kira Yardımı", "🏗️ Riskli Yapı", "📋 Başvuru Kanalları"]);
+    }
+  }, 400);
+}
+
+function renderQuickButtons() {
+  const labels = ["Riskli Yapı", "Kira Yardımı", "Malik Hakları", "Anlaşma Süreci", "Başvuru"];
+  const queries = ["riskli yapı", "kira yardımı", "haklarım malik", "anlaşma komşu", "başvuru nasıl"];
+  quickBar.innerHTML = '';
+  labels.forEach((l, i) => {
+    const b = document.createElement('button');
+    b.textContent = l;
+    b.className = 'kd-qb';
+    b.onclick = () => { input.value = queries[i]; send(); };
+    quickBar.appendChild(b);
+  });
+}
+
+// 🔹 EVENT LISTENERS
+document.getElementById('kd-open').onclick = toggleWidget;
+document.getElementById('kd-close').onclick = toggleWidget;
+document.getElementById('kd-send').onclick = send;
+input.addEventListener('keypress', e => { if(e.key==='Enter') send(); });
+
+// İlk açılış
+showWelcome();
+</script>
+</body>
+</html>
